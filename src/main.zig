@@ -1,8 +1,8 @@
 const std = @import("std");
 const yazap = @import("yazap");
 const schnorr = @import("schnorr.zig");
+const Ristretto255 = std.crypto.ecc.Ristretto255;
 
-const log = std.log;
 const App = yazap.App;
 const Arg = yazap.Arg;
 
@@ -18,18 +18,19 @@ pub fn main() !void {
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    var app = App.init(allocator, "schnorr", "Schnorr Signing CLI tool");
+    var app = App.init(allocator, "schnorr", "Schnorr Signing (over Ed25519) CLI tool");
     defer app.deinit();
 
     var cli = app.rootCommand();
 
-    var sign_cmd = app.createCommand("sign", "Generate shares given a secret key");
-    // try sign_cmd.addArg(Arg.singleValueOption("threshold", 't', "Minimum number of shares required to reconstruct the secret key"));
-    // try sign_cmd.addArg(Arg.singleValueOption("total", 'n', "Total number of shares to generate"));
-    // try sign_cmd.addArg(Arg.singleValueOption("secret", 's', "Secret key to generate shares for"));
+    const sign_cmd = app.createCommand("sign", "Sign a message given a private key");
+    try sign_cmd.addArg(Arg.singleValueOption("priv", null, "Private key for signing"));
+    try sign_cmd.addArg(Arg.singleValueOption("message", 'm', "Message to sign"));
 
-    var verify_cmd = app.createCommand("verify", "Reconstruct a secret key given a number of shares (must meet the min. number of shares required to work)");
-    // try verify_cmd.addArg(Arg.multiValuesOption("shares", 's', "Share values to reconstruct secret key", 255));
+    const verify_cmd = app.createCommand("verify", "Verify a signature given the signer's public key");
+    try verify_cmd.addArg(Arg.singleValueOption("pub", null, "Signer's public key"));
+    try verify_cmd.addArg(Arg.singleValueOption("message", 'm', "Message used to generate signature"));
+    try verify_cmd.addArg(Arg.singleValueOption("signature", 'm', "Signature to verify"));
 
     try cli.addSubcommand(sign_cmd);
     try cli.addSubcommand(verify_cmd);
@@ -37,54 +38,45 @@ pub fn main() !void {
     const matches = try app.parseProcess();
 
     // `Sign` subcommand setup
-    if (matches.subcommandMatches("sign")) |gen_cmd_matches| {
-        // if (gen_cmd_matches.getSingleValue("threshold") == null) {
-        //     try stdout.print("Please provide minimum number of shares to reconstruct secret", .{});
-        //     try bw.flush();
-        //     return;
-        // }
-        // if (gen_cmd_matches.getSingleValue("total") == null) {
-        //     try stdout.print("Please provide total number of shares to generate", .{});
-        //     try bw.flush();
-        //     return;
-        // }
-        // if (gen_cmd_matches.getSingleValue("secret") == null) {
-        //     try stdout.print("Please provide your secret", .{});
-        //     try bw.flush();
-        //     return;
-        // }
-        //
-        // const threshold = try std.fmt.parseInt(u8, gen_cmd_matches.getSingleValue("threshold").?, 10);
-        // const total = try std.fmt.parseInt(u8, gen_cmd_matches.getSingleValue("total").?, 10);
-        // const secret = gen_cmd_matches.getSingleValue("secret").?;
-        //
-        // // Secret can have max size of 255
-        // var buffer: [255]u8 = undefined;
-        // const secret_slice = buffer[0..secret.len];
-        // std.mem.copyForwards(u8, secret_slice, secret);
-        // const secret_list = std.ArrayList(u8).fromOwnedSlice(allocator, secret_slice);
-        //
-        // const shares = try shamir.generate(secret_list, total, threshold, allocator);
-        // for (shares.items, 0..) |share, i| {
-        //     if (i > 0) {
-        //         try stdout.print("\n", .{});
-        //     }
-        //     for (share.items) |s| {
-        //         try stdout.print("{X:0>2}", .{s});
-        //     }
-        // }
+    if (matches.subcommandMatches("sign")) |sign_cmd_matches| {
+        if (sign_cmd_matches.getSingleValue("priv") == null) {
+            try stdout.print("Please provide private key for signing", .{});
+            try bw.flush();
+            return;
+        }
+        if (sign_cmd_matches.getSingleValue("message") == null) {
+            try stdout.print("Please provide message to sign", .{});
+            try bw.flush();
+            return;
+        }
+
+        // const priv = sign_cmd_matches.getSingleValue("priv").?;
+        // const pub = Ristretto255.basePoint.mul()
+
+        _ = sign_cmd_matches.getSingleValue("message").?;
+        // const _ = try schnorr.Signature.sign(message, priv, allocator);
 
         try bw.flush();
     }
 
     // `Verify` subcommand setup
-    if (matches.subcommandMatches("verify")) |gen_cmd_matches| {
-        // if (gen_cmd_matches.getMultiValues("shares") == null) {
-        //     try stdout.print("Please provide your share values", .{});
-        //     try bw.flush();
-        //     return;
-        // }
-        //
+    if (matches.subcommandMatches("verify")) |verify_cmd_matches| {
+        if (verify_cmd_matches.getSingleValue("pub") == null) {
+            try stdout.print("Please provide signer's public key", .{});
+            try bw.flush();
+            return;
+        }
+        if (verify_cmd_matches.getSingleValue("message") == null) {
+            try stdout.print("Please provide message to sign", .{});
+            try bw.flush();
+            return;
+        }
+        if (verify_cmd_matches.getSingleValue("signature") == null) {
+            try stdout.print("Please provide signature to verify", .{});
+            try bw.flush();
+            return;
+        }
+
         // const shares = gen_cmd_matches.getMultiValues("shares").?;
         // var share_lists = std.ArrayList(std.ArrayList(u8)).init(allocator);
         // defer share_lists.deinit();
