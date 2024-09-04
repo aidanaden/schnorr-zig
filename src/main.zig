@@ -1,10 +1,23 @@
 const std = @import("std");
 const yazap = @import("yazap");
 const schnorr = @import("schnorr.zig");
+const musig2 = @import("musig2.zig");
 const Ristretto255 = std.crypto.ecc.Ristretto255;
 
 const App = yazap.App;
 const Arg = yazap.Arg;
+
+fn parse_raw_hex(raw_input: []const u8, comptime output_size: u32) ![output_size]u8 {
+    std.debug.assert(raw_input.len == output_size * 2);
+    var buffer: [output_size]u8 = undefined;
+    var i: usize = 0;
+    while (i < raw_input.len) : (i += 2) {
+        const raw_hex = raw_input[i .. i + 2];
+        const hex = try std.fmt.parseInt(u8, raw_hex, 16);
+        buffer[i / 2] = hex;
+    }
+    return buffer;
+}
 
 pub fn main() !void {
     // stdout is for the actual output of your application, for example if you
@@ -18,19 +31,19 @@ pub fn main() !void {
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    var app = App.init(allocator, "schnorr", "Schnorr Signing (over Ed25519) CLI tool");
+    var app = App.init(allocator, "schnorr", "Schnorr Signing (via Ristretto255) CLI tool");
     defer app.deinit();
 
     var cli = app.rootCommand();
 
-    const sign_cmd = app.createCommand("sign", "Sign a message given a private key");
-    try sign_cmd.addArg(Arg.singleValueOption("priv", null, "Private key for signing"));
+    var sign_cmd = app.createCommand("sign", "Sign a message given a private key");
+    try sign_cmd.addArg(Arg.singleValueOption("priv", 'p', "Private key for signing"));
     try sign_cmd.addArg(Arg.singleValueOption("message", 'm', "Message to sign"));
 
-    const verify_cmd = app.createCommand("verify", "Verify a signature given the signer's public key");
-    try verify_cmd.addArg(Arg.singleValueOption("pub", null, "Signer's public key"));
+    var verify_cmd = app.createCommand("verify", "Verify a signature given the signer's public key");
+    try verify_cmd.addArg(Arg.singleValueOption("pub", 'p', "Signer's public key"));
     try verify_cmd.addArg(Arg.singleValueOption("message", 'm', "Message used to generate signature"));
-    try verify_cmd.addArg(Arg.singleValueOption("signature", 'm', "Signature to verify"));
+    try verify_cmd.addArg(Arg.singleValueOption("signature", 's', "Signature to verify"));
 
     try cli.addSubcommand(sign_cmd);
     try cli.addSubcommand(verify_cmd);
@@ -50,12 +63,25 @@ pub fn main() !void {
             return;
         }
 
-        // const priv = sign_cmd_matches.getSingleValue("priv").?;
-        // const pub = Ristretto255.basePoint.mul()
+        const raw_privkey = sign_cmd_matches.getSingleValue("priv").?;
+        const message = sign_cmd_matches.getSingleValue("message").?;
 
-        _ = sign_cmd_matches.getSingleValue("message").?;
-        // const _ = try schnorr.Signature.sign(message, priv, allocator);
+        const privkey = try parse_raw_hex(raw_privkey, 32);
+        const pubkey = try Ristretto255.basePoint.mul(privkey);
+        const pubkey_bytes = pubkey.toBytes();
+        try stdout.print("pub key:  ", .{});
+        for (0..pubkey_bytes.len) |i| {
+            try stdout.print("{X:0>2}", .{pubkey_bytes[i]});
+        }
 
+        const sig = try schnorr.Signature.sign(message, &privkey, allocator);
+        try stdout.print("\nsignature:  ", .{});
+        for (0..sig.nonce_pub.len) |i| {
+            try stdout.print("{X:0>2}", .{sig.nonce_pub[i]});
+        }
+        for (0..sig.s.len) |i| {
+            try stdout.print("{X:0>2}", .{sig.s[i]});
+        }
         try bw.flush();
     }
 
@@ -77,36 +103,31 @@ pub fn main() !void {
             return;
         }
 
-        // const shares = gen_cmd_matches.getMultiValues("shares").?;
-        // var share_lists = std.ArrayList(std.ArrayList(u8)).init(allocator);
-        // defer share_lists.deinit();
-        //
-        // for (shares) |raw_share| {
-        //     // Input is expected to be in 2-digit hex format
-        //     var buffer: [256]u8 = undefined;
-        //     var i: usize = 0;
-        //     while (i < raw_share.len) : (i += 2) {
-        //         const raw_hex = raw_share[i .. i + 2];
-        //         const hex = try std.fmt.parseInt(u8, raw_hex, 16);
-        //         buffer[i / 2] = hex;
-        //     }
-        //     const s_slice = buffer[0 .. raw_share.len / 2];
-        //     const share_list = std.ArrayList(u8).fromOwnedSlice(allocator, s_slice);
-        //
-        //     // Clone is required to prevent being overwritten
-        //     // in subsequent iteration of loop
-        //     const share_list_clone = try share_list.clone();
-        //     try share_lists.append(share_list_clone);
-        // }
-        //
-        // const share_lists_slice = try share_lists.toOwnedSlice();
-        // const secret = try shamir.reconstruct(share_lists_slice, allocator);
-        //
-        // try stdout.print("Regenerated secret: ", .{});
-        // for (secret.items) |s| {
-        //     try stdout.print("{c}", .{s});
-        // }
+        const raw_message = verify_cmd_matches.getSingleValue("message").?;
+        const raw_pubkey = verify_cmd_matches.getSingleValue("pub").?;
+        const raw_sig = verify_cmd_matches.getSingleValue("signature").?;
 
+        const pubkey_bytes = try parse_raw_hex(raw_pubkey, 32);
+        const pubkey = try Ristretto255.fromBytes(pubkey_bytes);
+        const sig_bytes = try parse_raw_hex(raw_sig, 64);
+
+        var sig_nonce_pubkey: [32]u8 = undefined;
+        const sig_nonce_pubkey_slice = sig_nonce_pubkey[0..];
+        var sig_s: [32]u8 = undefined;
+        const sig_s_slice = sig_s[0..];
+
+        std.mem.copyForwards(u8, sig_nonce_pubkey_slice, sig_bytes[0..32]);
+        std.mem.copyForwards(u8, sig_s_slice, sig_bytes[32..]);
+
+        const sig = schnorr.Signature{ .nonce_pub = sig_nonce_pubkey, .s = sig_s };
+        const valid = try sig.verify(&pubkey, raw_message, allocator);
+
+        try stdout.print("signature validity: {any}", .{valid});
         try bw.flush();
     }
+}
+
+test {
+    @import("std").testing.refAllDecls(musig2);
+    @import("std").testing.refAllDecls(schnorr);
 }
