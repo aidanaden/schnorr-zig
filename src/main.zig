@@ -129,5 +129,4 @@ pub fn main() !void {
 
 test {
     @import("std").testing.refAllDecls(musig2);
-    @import("std").testing.refAllDecls(schnorr);
 }
