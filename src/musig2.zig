@@ -129,7 +129,6 @@ fn compute_nonce_coeff(aggregated_pubkey: *const Ristretto255, group_nonces: *co
 }
 
 fn partial_sign(signer_keypair: *const KeyPair, signer_nonces: []KeyPair, aggregated_pubkey: *const AggregatedPubkey, signers_nonces: std.ArrayList([2]Ristretto255), message: []const u8, allocator: Allocator) !schnorr.Signature {
-
     // []{ r_1 .. r_v }
     const group_nonces = compute_group_nonces(signers_nonces);
     const group_nonces_slice = group_nonces[0..];
@@ -177,6 +176,7 @@ test "generate 2 nonces" {
 }
 
 test "successful sign and verify between 3 signers" {
+    const NUM_SIGNERS = 3;
     const message = "test";
 
     var keypairs = std.ArrayList(KeyPair).init(std.testing.allocator);
@@ -189,7 +189,7 @@ test "successful sign and verify between 3 signers" {
     var test_nonce_points = std.ArrayList([2]Ristretto255).init(std.testing.allocator);
     defer test_nonce_points.deinit();
 
-    for (0..3) |_| {
+    for (0..NUM_SIGNERS) |_| {
         const keypair = try schnorr.generate_nonce();
         try keypairs.append(keypair);
         try pub_keys.append(keypair.pub_point);
@@ -208,7 +208,7 @@ test "successful sign and verify between 3 signers" {
 
     var partial_sigs = std.ArrayList(schnorr.Signature).init(std.testing.allocator);
     defer partial_sigs.deinit();
-    for (0..pub_keys.items.len) |i| {
+    for (0..NUM_SIGNERS) |i| {
         const keypair = keypairs.items[i];
         const nonces = &test_nonces.items[i];
         const sig = try partial_sign(&keypair, nonces, &aggregate_key, test_nonce_points, message, std.testing.allocator);
@@ -216,10 +216,8 @@ test "successful sign and verify between 3 signers" {
     }
 
     const final_sig = try sign(partial_sigs);
-    const final_sig_bytes = final_sig.toBytes();
+    const verified = try final_sig.verify(&aggregate_key.point, message, std.testing.allocator);
 
-    const valid = try final_sig.verify(&aggregate_key.point, message, std.testing.allocator);
-
-    std.debug.print("\nsig: {any}, valid: {any} \n", .{ final_sig_bytes, valid });
-    try expect(final_sig_bytes.len == 64);
+    std.debug.print("\nschnorr musig2 sign success: {any}", .{verified});
+    try expect(verified);
 }
