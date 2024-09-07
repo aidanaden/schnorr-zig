@@ -44,11 +44,22 @@ pub const Signature = struct {
     /// Signs a message using a simple Schnorr signature scheme:
     ///
     /// ```
-    /// (R,s) = rG, r + H(X,R,m) * x
+    /// R = rG
+    /// (R,s) = R, r + H(X||R||M) * x
     /// ````
     ///
     /// R: nonce point (rG), r: random nonce secret
     /// X: signer point (xG), x: signer secret
+    ///
+    /// Note: only difference between this implementation and Ed25519
+    /// is Ed25519 generates the nonce via Sha512 with the message.
+    ///
+    /// ```
+    /// r = H(r || m)
+    /// R = rG
+    /// (R,s) = rG, r + H(X||R||M) * x
+    /// ````
+    ///
     ///
     /// Arguments
     /// - `message`: The message to be signed.
@@ -70,10 +81,10 @@ pub const Signature = struct {
     /// public key and an expected message
     ///
     /// ```
-    /// sG === (r + H(X,R,m) * x)G
-    /// sG === rG + (H(X,R,m) * x)G
-    /// sG === rG + H(X,R,m) * (xG)
-    /// sG === R + H(X,R,m) * X
+    /// sG === (r + H(X||R||M) * x)G
+    /// sG === rG + (H(X||R||M) * x)G
+    /// sG === R + H(X||R||M) * (xG)
+    /// sG === R + H(X||R||M) * X
     /// ```
     ///
     /// R: nonce point (rG)
@@ -86,14 +97,17 @@ pub const Signature = struct {
     /// Returns
     /// - Boolean indicating if given signature (R, s) is valid
     pub fn verify(self: *const Self, signer_pub: *const Ristretto255, message: []const u8, allocator: Allocator) !bool {
+        // sG
         const left = try Ristretto255.basePoint.mul(self.s);
-
+        // R
         const nonce_point = try Ristretto255.fromBytes(self.nonce_pub);
+        // H(X||R||M)
         const hash = try compute_signer_nonce_message_hash(signer_pub, &nonce_point, message, allocator);
-        // IMPORTANT: calculations MUST be done on Ristretto255
-        // POINTS, not the underlying raw bytes
+        // H(X||R||M) * X
         const hash_signer_point = try signer_pub.mul(hash);
+        // R + H(X||R||M|) * X
         const right = hash_signer_point.add(nonce_point);
+        // sG === R + H(X||R||M) * X
         return left.equivalent(right);
     }
 
