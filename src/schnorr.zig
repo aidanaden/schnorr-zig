@@ -110,7 +110,6 @@ pub const Signature = struct {
         for (0..self.nonce_pub.len) |i| {
             try writer.print("{X:0>2}", .{self.nonce_pub[i]});
         }
-
         for (0..self.s.len) |i| {
             try writer.print("{X:0>2}", .{self.s[i]});
         }
