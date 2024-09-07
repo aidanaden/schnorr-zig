@@ -1,7 +1,5 @@
 # schnorr signatures + musig2 (N/N multisigs)
 
-![Github CI](https://github.com/aidanaden/schnorr-zig/workflows/Github%20CI/badge.svg)
-
 Simple zig implementation of [Schnorr Signatures](https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing) and [MuSig2](https://link.springer.com/chapter/10.1007/978-3-030-84242-0_8).
 
 Implementation partially inspired by [https://github.com/VictoriaGrasshopper/schnorr_signature](https://github.com/VictoriaGrasshopper/schnorr_signature)
