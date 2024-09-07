@@ -9,10 +9,10 @@ pub const KeyPair = struct {
     priv_key: CompressedScalar,
 };
 
-pub fn generate_nonce() !KeyPair {
+pub fn generate_keypair() !KeyPair {
     var rand_scalar: CompressedScalar = undefined;
     for (0..32) |i| {
-        rand_scalar[i] = std.crypto.random.intRangeAtMost(u8, 0, 255);
+        rand_scalar[i] = std.crypto.random.intRangeAtMost(u8, 1, 255);
     }
     const rand_pub = try Ristretto255.basePoint.mul(rand_scalar);
     return KeyPair{
@@ -58,7 +58,7 @@ pub const Signature = struct {
     /// - A Signature struct containing `nonce_pub` (in bytes) and `s`.
     pub fn sign(message: []const u8, signer_priv: *const CompressedScalar, allocator: Allocator) !Self {
         const signer_point = try Ristretto255.basePoint.mul(signer_priv.*);
-        const nonce = try generate_nonce();
+        const nonce = try generate_keypair();
         // H(X,R,m)
         const hash = try compute_signer_nonce_message_hash(&signer_point, &nonce.pub_point, message, allocator);
         // s = r + H(X,R,m) * x
@@ -97,9 +97,23 @@ pub const Signature = struct {
         return left.equivalent(right);
     }
 
+    pub fn fromBytes(bytes: *const [64]u8) Self {
+        return Self{ .nonce_pub = bytes[0..32], .s = bytes[32..] };
+    }
+
     pub fn toBytes(self: *const Self) [64]u8 {
         const bytes = self.nonce_pub ++ self.s;
         return bytes;
+    }
+
+    pub fn print_hex(self: *const Self, writer: std.io.AnyWriter) !void {
+        for (0..self.nonce_pub.len) |i| {
+            try writer.print("{X:0>2}", .{self.nonce_pub[i]});
+        }
+
+        for (0..self.s.len) |i| {
+            try writer.print("{X:0>2}", .{self.s[i]});
+        }
     }
 };
 
@@ -107,7 +121,7 @@ const expect = std.testing.expect;
 
 test "signing verification success" {
     const message: []const u8 = "test";
-    var key = try generate_nonce();
+    var key = try generate_keypair();
     const sig = try Signature.sign(message, &key.priv_key, std.testing.allocator);
     const verified = try sig.verify(&key.pub_point, message, std.testing.allocator);
     std.debug.print("\nschnorr single sign success: {any}", .{verified});
@@ -116,9 +130,9 @@ test "signing verification success" {
 
 test "signing verification failed, invalid signer public key" {
     const message: []const u8 = "test";
-    var key = try generate_nonce();
+    var key = try generate_keypair();
     const sig = try Signature.sign(message, &key.priv_key, std.testing.allocator);
-    var key2 = try generate_nonce();
+    var key2 = try generate_keypair();
     const verified = try sig.verify(&key2.pub_point, message, std.testing.allocator);
     try expect(!verified);
 }
@@ -126,7 +140,7 @@ test "signing verification failed, invalid signer public key" {
 test "signing verification failed, invalid message" {
     const message: []const u8 = "test";
     const message2: []const u8 = "test2";
-    var key = try generate_nonce();
+    var key = try generate_keypair();
     const sig = try Signature.sign(message, &key.priv_key, std.testing.allocator);
     const verified = try sig.verify(&key.pub_point, message2, std.testing.allocator);
     try expect(!verified);

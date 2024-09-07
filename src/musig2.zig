@@ -7,10 +7,10 @@ const CompressedScalar = Ristretto255.scalar.CompressedScalar;
 const schnorr = @import("schnorr.zig");
 const KeyPair = schnorr.KeyPair;
 
-fn generate_nonces(comptime num_nonces: u32) ![num_nonces]KeyPair {
+fn generate_keypairs(comptime num_nonces: u32) ![num_nonces]KeyPair {
     var nonces: [num_nonces]KeyPair = undefined;
     for (0..num_nonces) |i| {
-        const nonce = try schnorr.generate_nonce();
+        const nonce = try schnorr.generate_keypair();
         nonces[i] = nonce;
     }
     return nonces;
@@ -66,7 +66,7 @@ const AggregatedPubkey = struct { point: Ristretto255, hash: [32]u8 };
 ///
 /// Returns:
 /// - aggregate public key X as a Ristretto255 point
-fn compute_aggregate_pubkey(pubkeys: std.ArrayList(Ristretto255), allocator: Allocator) !AggregatedPubkey {
+pub fn compute_aggregate_pubkey(pubkeys: std.ArrayList(Ristretto255), allocator: Allocator) !AggregatedPubkey {
     std.debug.assert(pubkeys.items.len > 0);
 
     var aggregated_pubkey: ?Ristretto255 = null;
@@ -128,13 +128,14 @@ fn compute_nonce_coeff(aggregated_pubkey: *const Ristretto255, group_nonces: *co
     return out;
 }
 
-fn partial_sign(signer_keypair: *const KeyPair, signer_nonces: []KeyPair, aggregated_pubkey: *const AggregatedPubkey, signers_nonces: std.ArrayList([2]Ristretto255), message: []const u8, allocator: Allocator) !schnorr.Signature {
+pub fn sign_partial(signer_privkey: *const CompressedScalar, signer_nonces: []CompressedScalar, aggregated_pubkey: *const AggregatedPubkey, signers_nonces: std.ArrayList([2]Ristretto255), message: []const u8, allocator: Allocator) !schnorr.Signature {
+    const signer_pubkey = try Ristretto255.basePoint.mul(signer_privkey.*);
     // []{ r_1 .. r_v }
     const group_nonces = compute_group_nonces(signers_nonces);
     const group_nonces_slice = group_nonces[0..];
 
     // a_i = H(L || X_i)
-    const signer_hash = try compute_signer_hash(aggregated_pubkey.hash, &signer_keypair.pub_point, allocator);
+    const signer_hash = try compute_signer_hash(aggregated_pubkey.hash, &signer_pubkey, allocator);
 
     // b
     const nonce_coeff = try compute_nonce_coeff(&aggregated_pubkey.point, group_nonces_slice, message, allocator);
@@ -143,12 +144,12 @@ fn partial_sign(signer_keypair: *const KeyPair, signer_nonces: []KeyPair, aggreg
     const R_1 = try group_nonces[1].mul(nonce_coeff);
     const R = R_0.add(R_1);
 
-    var s_right: CompressedScalar = signer_nonces[0].priv_key;
-    s_right = Ristretto255.scalar.add(s_right, Ristretto255.scalar.mul(signer_nonces[1].priv_key, nonce_coeff));
+    var s_right: CompressedScalar = signer_nonces[0];
+    s_right = Ristretto255.scalar.add(s_right, Ristretto255.scalar.mul(signer_nonces[1], nonce_coeff));
 
     const c = try schnorr.compute_signer_nonce_message_hash(&aggregated_pubkey.point, &R, message, allocator);
     var s = Ristretto255.scalar.mul(c, signer_hash);
-    s = Ristretto255.scalar.mul(s, signer_keypair.priv_key);
+    s = Ristretto255.scalar.mul(s, signer_privkey.*);
     s = Ristretto255.scalar.add(s, s_right);
 
     return schnorr.Signature{
@@ -157,7 +158,7 @@ fn partial_sign(signer_keypair: *const KeyPair, signer_nonces: []KeyPair, aggreg
     };
 }
 
-fn sign(partial_signatures: std.ArrayList(schnorr.Signature)) !schnorr.Signature {
+pub fn sign_aggregate(partial_signatures: std.ArrayList(schnorr.Signature)) !schnorr.Signature {
     std.debug.assert(partial_signatures.items.len > 0);
 
     var s: CompressedScalar = Ristretto255.scalar.zero;
@@ -171,7 +172,7 @@ fn sign(partial_signatures: std.ArrayList(schnorr.Signature)) !schnorr.Signature
 const expect = std.testing.expect;
 
 test "generate 2 nonces" {
-    const nonces = try generate_nonces(2);
+    const nonces = try generate_keypairs(2);
     try expect(nonces.len == 2);
 }
 
@@ -184,24 +185,24 @@ test "successful sign and verify between 3 signers" {
     var pub_keys = std.ArrayList(Ristretto255).init(std.testing.allocator);
     defer pub_keys.deinit();
 
-    var test_nonces = std.ArrayList([2]KeyPair).init(std.testing.allocator);
-    defer test_nonces.deinit();
-    var test_nonce_points = std.ArrayList([2]Ristretto255).init(std.testing.allocator);
-    defer test_nonce_points.deinit();
+    var nonce_keys = std.ArrayList([2]CompressedScalar).init(std.testing.allocator);
+    defer nonce_keys.deinit();
+    var nonce_points = std.ArrayList([2]Ristretto255).init(std.testing.allocator);
+    defer nonce_points.deinit();
 
     for (0..NUM_SIGNERS) |_| {
-        const keypair = try schnorr.generate_nonce();
+        const keypair = try schnorr.generate_keypair();
         try keypairs.append(keypair);
         try pub_keys.append(keypair.pub_point);
 
-        const nonce1 = try schnorr.generate_nonce();
-        const nonce2 = try schnorr.generate_nonce();
+        const nonce1 = try schnorr.generate_keypair();
+        const nonce2 = try schnorr.generate_keypair();
 
-        const nonces = [_]KeyPair{ nonce1, nonce2 };
-        const nonce_points = [_]Ristretto255{ nonce1.pub_point, nonce2.pub_point };
+        const nonce_key = [_]CompressedScalar{ nonce1.priv_key, nonce2.priv_key };
+        const nonce_point = [_]Ristretto255{ nonce1.pub_point, nonce2.pub_point };
 
-        try test_nonces.append(nonces);
-        try test_nonce_points.append(nonce_points);
+        try nonce_keys.append(nonce_key);
+        try nonce_points.append(nonce_point);
     }
 
     const aggregate_key = try compute_aggregate_pubkey(pub_keys, std.testing.allocator);
@@ -210,12 +211,12 @@ test "successful sign and verify between 3 signers" {
     defer partial_sigs.deinit();
     for (0..NUM_SIGNERS) |i| {
         const keypair = keypairs.items[i];
-        const nonces = &test_nonces.items[i];
-        const sig = try partial_sign(&keypair, nonces, &aggregate_key, test_nonce_points, message, std.testing.allocator);
+        const nonce_key = &nonce_keys.items[i];
+        const sig = try sign_partial(&keypair.priv_key, nonce_key, &aggregate_key, nonce_points, message, std.testing.allocator);
         try partial_sigs.append(sig);
     }
 
-    const final_sig = try sign(partial_sigs);
+    const final_sig = try sign_aggregate(partial_sigs);
     const verified = try final_sig.verify(&aggregate_key.point, message, std.testing.allocator);
 
     std.debug.print("\nschnorr musig2 sign success: {any}", .{verified});
