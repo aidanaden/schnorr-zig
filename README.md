@@ -21,8 +21,9 @@ zig fetch --save git+https://github.com/aidanaden/schnorr-zig
 2. Add the following to `build.zig`:
 
 ```zig
-const schnorr = b.dependency("schnorr", .{});
-exe.root_module.addImport("schnorr", yazap.module("schnorr"));
+const schnorr = b.dependency("schnorr-zig", .{});
+exe.root_module.addImport("schnorr", schnorr.module("schnorr"));
+exe.root_module.addImport("musig2", schnorr.module("musig2"));
 ```
 
 ## Build

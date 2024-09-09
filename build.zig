@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
-    // Expose this as a module that others can import
+    // Expose as modules that others can import
     _ = b.addModule("schnorr", .{
         .root_source_file = b.path("src/schnorr.zig"),
     });
@@ -23,20 +23,6 @@ pub fn build(b: *std.Build) void {
     _ = b.addModule("musig2", .{
         .root_source_file = b.path("src/musig2.zig"),
     });
-
-    const lib = b.addStaticLibrary(.{
-        .name = "schnorr",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // This declares intent for the library to be installed into the standard
-    // location when the user invokes the "install" step (the default step when
-    // running `zig build`).
-    b.installArtifact(lib);
 
     const yazap = b.dependency("yazap", .{});
 
