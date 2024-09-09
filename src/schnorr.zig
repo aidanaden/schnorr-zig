@@ -21,6 +21,15 @@ pub fn generate_keypair() !KeyPair {
     };
 }
 
+pub fn generate_keypairs(comptime num_nonces: u32) ![num_nonces]KeyPair {
+    var nonces: [num_nonces]KeyPair = undefined;
+    for (0..num_nonces) |i| {
+        const nonce = try generate_keypair();
+        nonces[i] = nonce;
+    }
+    return nonces;
+}
+
 pub fn compute_signer_nonce_message_hash(signer_point: *const Ristretto255, nonce_point: *const Ristretto255, message: []const u8, allocator: Allocator) ![32]u8 {
     var concatenated = std.ArrayList(u8).init(allocator);
     defer concatenated.deinit();
@@ -131,6 +140,11 @@ pub const Signature = struct {
 };
 
 const expect = std.testing.expect;
+
+test "generate 2 nonces" {
+    const nonces = try generate_keypairs(2);
+    try expect(nonces.len == 2);
+}
 
 test "signing verification success" {
     const message: []const u8 = "test";

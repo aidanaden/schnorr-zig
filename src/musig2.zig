@@ -7,15 +7,6 @@ const CompressedScalar = Ristretto255.scalar.CompressedScalar;
 const schnorr = @import("schnorr.zig");
 const KeyPair = schnorr.KeyPair;
 
-fn generate_keypairs(comptime num_nonces: u32) ![num_nonces]KeyPair {
-    var nonces: [num_nonces]KeyPair = undefined;
-    for (0..num_nonces) |i| {
-        const nonce = try schnorr.generate_keypair();
-        nonces[i] = nonce;
-    }
-    return nonces;
-}
-
 /// Computes L by hashing the concatenation of all public key bytes.
 ///
 /// Inputs:
@@ -170,11 +161,6 @@ pub fn sign_aggregate(partial_signatures: std.ArrayList(schnorr.Signature)) !sch
 }
 
 const expect = std.testing.expect;
-
-test "generate 2 nonces" {
-    const nonces = try generate_keypairs(2);
-    try expect(nonces.len == 2);
-}
 
 test "successful sign and verify between 3 signers" {
     const NUM_SIGNERS = 3;
