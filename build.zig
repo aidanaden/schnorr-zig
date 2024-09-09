@@ -15,6 +15,15 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
+    // Expose this as a module that others can import
+    _ = b.addModule("schnorr", .{
+        .root_source_file = b.path("src/schnorr.zig"),
+    });
+
+    _ = b.addModule("musig2", .{
+        .root_source_file = b.path("src/musig2.zig"),
+    });
+
     const lib = b.addStaticLibrary(.{
         .name = "schnorr",
         // In this case the main source file is merely a path, however, in more
