@@ -121,27 +121,34 @@ fn compute_nonce_coeff(aggregated_pubkey: *const Ristretto255, group_nonces: *co
 
 pub fn sign_partial(signer_privkey: *const CompressedScalar, signer_nonces: []CompressedScalar, aggregated_pubkey: *const AggregatedPubkey, signers_nonces: std.ArrayList([2]Ristretto255), message: []const u8, allocator: Allocator) !schnorr.Signature {
     const signer_pubkey = try Ristretto255.basePoint.mul(signer_privkey.*);
-    // []{ r_1 .. r_v }
+    // [ R_1 .. R_V ]
     const group_nonces = compute_group_nonces(signers_nonces);
     const group_nonces_slice = group_nonces[0..];
 
     // a_i = H(L || X_i)
     const signer_hash = try compute_signer_hash(aggregated_pubkey.hash, &signer_pubkey, allocator);
 
-    // b
+    // b = H(X || [ R_1 .. R_V ] || M)
     const nonce_coeff = try compute_nonce_coeff(&aggregated_pubkey.point, group_nonces_slice, message, allocator);
 
+    // R = R_0 + b * R_1
     const R_0 = group_nonces[0];
     const R_1 = try group_nonces[1].mul(nonce_coeff);
     const R = R_0.add(R_1);
 
+    // c = H(X || R || M)
+    const c = try schnorr.compute_signer_nonce_message_hash(&aggregated_pubkey.point, &R, message, allocator);
+
+    // (c * a_i * x_i)
+    var s_left = Ristretto255.scalar.mul(c, signer_hash);
+    s_left = Ristretto255.scalar.mul(s_left, signer_privkey.*);
+
+    // (r_1 + b * r_2)
     var s_right: CompressedScalar = signer_nonces[0];
     s_right = Ristretto255.scalar.add(s_right, Ristretto255.scalar.mul(signer_nonces[1], nonce_coeff));
 
-    const c = try schnorr.compute_signer_nonce_message_hash(&aggregated_pubkey.point, &R, message, allocator);
-    var s = Ristretto255.scalar.mul(c, signer_hash);
-    s = Ristretto255.scalar.mul(s, signer_privkey.*);
-    s = Ristretto255.scalar.add(s, s_right);
+    // s_i = (c * a_i * x_i) + (r_1 + b * r_2)
+    const s = Ristretto255.scalar.add(s_left, s_right);
 
     return schnorr.Signature{
         .nonce_pub = R.toBytes(),
